@@ -1,26 +1,22 @@
-from .plugin import LinkBayAuthPlugin, AuthConfig
-from .service import UserServiceProtocol
-from . import schemas
-from .security import (
-    hash_password,
-    verify_password,
-    create_access_token,
-    create_refresh_token,
-    decode_access_token,
-    create_password_reset_token,
-    verify_password_reset_token
+from .core import AuthCore
+from .schemas import (
+    UserCreate, UserLogin, Token, TokenData, 
+    UserResponse, PasswordResetRequest, PasswordResetConfirm
 )
+from .dependencies import get_current_user, get_current_active_user
+from .router import auth_router
 
+__version__ = "0.1.0"
 __all__ = [
-    "LinkBayAuthPlugin",
-    "AuthConfig",
-    "UserServiceProtocol",
-    "schemas",
-    "hash_password",
-    "verify_password",
-    "create_access_token",
-    "create_refresh_token",
-    "decode_access_token",
-    "create_password_reset_token",
-    "verify_password_reset_token"
+    "AuthCore",
+    "UserCreate",
+    "UserLogin", 
+    "Token",
+    "TokenData",
+    "UserResponse",
+    "PasswordResetRequest",
+    "PasswordResetConfirm",
+    "get_current_user",
+    "get_current_active_user",
+    "auth_router"
 ]

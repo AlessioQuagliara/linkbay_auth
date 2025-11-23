@@ -1,8 +1,18 @@
 # LinkBay-Auth
 
-Libreria di autenticazione per LinkBayCMS.
+[![License](https://img.shields.io/badge/license-MIT-blue)]()
 
-Fornisce JWT auth, refresh tokens, password recovery e validazione robusta senza imporre modelli DB.
+**Sistema di autenticazione JWT per FastAPI - Zero dipendenze DB, puramente logica**
+
+## Caratteristiche
+
+- **JWT** con access token e refresh token
+- **Zero dipendenze DB** - Implementi tu i modelli
+- **Completamente async** - Perfetto per FastAPI
+- **Password hashing** con bcrypt
+- **Token revocation** - Singolo o tutti i dispositivi
+- **Reset password** - Con token temporanei
+- **Protocollo pulito** - UserServiceProtocol da implementare
 
 ## Installazione
 
@@ -10,87 +20,72 @@ Fornisce JWT auth, refresh tokens, password recovery e validazione robusta senza
 pip install git+https://github.com/AlessioQuagliara/linkbay-auth.git
 ```
 
-## How to Use
+## Utilizzo Rapido
 
-### 1. Implementa UserService
+### 1. Implementa UserServiceProtocol
 
 ```python
 from linkbay_auth import UserServiceProtocol
 from datetime import datetime
 
-class MyUserService:
+class MyUserService(UserServiceProtocol):
     def __init__(self, db_session):
         self.db = db_session
-    
-    def get_user_by_email(self, email: str):
-        return self.db.query(User).filter(User.email == email).first()
-    
-    def get_user_by_id(self, user_id: int):
-        return self.db.query(User).filter(User.id == user_id).first()
-    
-    def create_user(self, email: str, hashed_password: str):
-        user = User(email=email, hashed_password=hashed_password)
-        self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
-        return user
-    
-    def update_user_password(self, email: str, hashed_password: str):
-        user = self.get_user_by_email(email)
-        if user:
-            user.hashed_password = hashed_password
-            self.db.commit()
-            self.db.refresh(user)
-        return user
-    
-    def save_refresh_token(self, user_id: int, token: str, expires_at: datetime):
-        rt = RefreshToken(user_id=user_id, token=token, expires_at=expires_at)
-        self.db.add(rt)
-        self.db.commit()
-        return rt
-    
-    def get_refresh_token(self, token: str):
-        return self.db.query(RefreshToken).filter(
-            RefreshToken.token == token,
-            RefreshToken.revoked == 0
-        ).first()
-    
-    def revoke_refresh_token(self, token: str) -> bool:
-        rt = self.db.query(RefreshToken).filter(RefreshToken.token == token).first()
-        if rt:
-            rt.revoked = 1
-            self.db.commit()
-            return True
-        return False
-    
-    def revoke_all_user_tokens(self, user_id: int):
-        self.db.query(RefreshToken).filter(
-            RefreshToken.user_id == user_id,
-            RefreshToken.revoked == 0
-        ).update({"revoked": 1})
-        self.db.commit()
+
+    async def get_user_by_email(self, email: str):
+        # Tua implementazione con i TUOI modelli
+        return await self.db.query(User).filter(User.email == email).first()
+
+    async def get_user_by_id(self, user_id: int):
+        return await self.db.query(User).filter(User.id == user_id).first()
+
+    # ... implementa tutti i metodi del Protocol
 ```
 
-### 2. Configura il Plugin
+### 2. Configura nel tuo FastAPI
 
 ```python
-from linkbay_auth import LinkBayAuthPlugin, AuthConfig
+from fastapi import FastAPI
+from linkbay_auth import AuthCore, create_auth_router
 
+app = FastAPI()
+
+# Configurazione
 user_service = MyUserService(db_session)
-
-config = AuthConfig(
+auth_core = AuthCore(
     user_service=user_service,
-    secret_key="your-secret-key",
-    access_token_minutes=15,
-    refresh_token_days=30
+    secret_key="tuo-secret-key",
+    access_token_expire_minutes=15,
+    refresh_token_expire_days=30
 )
 
-LinkBayAuthPlugin.install(app, config)
+# Aggiungi le route di autenticazione
+auth_router = create_auth_router(auth_core)
+app.include_router(auth_router)
 ```
 
-### 3. Requisiti Minimi
+### 3. Proteggi gli endpoint
 
-Il tuo `UserService` deve implementare tutti i metodi di `UserServiceProtocol`.
+```python
+from linkbay_auth import get_current_active_user
+
+@app.get("/protected")
+async def protected_route(current_user = Depends(get_current_active_user)):
+    return {"message": f"Ciao {current_user.email}"}
+```
+
+## Endpoints Disponibili
+
+- `POST /auth/register` - Registrazione
+- `POST /auth/login` - Login
+- `POST /auth/refresh` - Rinnova access token
+- `POST /auth/logout` - Logout
+- `POST /auth/logout-all` - Logout da tutti i dispositivi
+- `GET /auth/me` - Informazioni utente corrente
+- `POST /auth/password-reset-request` - Richiedi reset password
+- `POST /auth/password-reset-confirm` - Conferma reset password
+
+## Requisiti Modelli
 
 I tuoi modelli devono avere questi campi minimi:
 
@@ -98,40 +93,29 @@ I tuoi modelli devono avere questi campi minimi:
 
 **RefreshToken**: `id`, `user_id`, `token`, `expires_at`, `revoked`
 
-### 4. API Endpoints
-
-Tutti gli endpoint sono sotto `/auth`:
-
-- `POST /register` - Registrazione
-- `POST /login` - Login con access + refresh token
-- `POST /refresh` - Rinnova access token
-- `POST /logout` - Revoca refresh token
-- `POST /logout-all` - Revoca tutti i token utente
-- `GET /me` - Info utente autenticato
-- `POST /password-reset-request` - Richiedi reset password
-- `POST /password-reset-confirm` - Conferma reset con token
-
-### 5. Funzioni Utilità
-
-```python
-from linkbay_auth import hash_password, verify_password, create_access_token
-
-# Hash password
-hashed = hash_password("mypassword")
-
-# Verifica password
-valid = verify_password("mypassword", hashed)
-
-# Crea token custom
-token = create_access_token({"sub": "user@example.com"}, "secret", 15)
+## Licenza
+```
+MIT - Vedere LICENSE per dettagli.
 ```
 
-## Features
+## INSTALLAZIONE
 
-- ✅ **Zero dipendenze DB** - Nessun ORM imposto (SQLAlchemy, Django ORM, raw SQL, qualsiasi cosa)
-- ✅ **Puramente logica** - Implementi il `UserServiceProtocol`, la libreria gestisce solo auth
-- ✅ **JWT** con access (15min) e refresh tokens (30 giorni)
-- ✅ **Password validation** - min 8 char, 1 maiuscola, 1 minuscola, 1 numero
-- ✅ **Password recovery** con token temporanei (1 ora)
-- ✅ **Token revocation** - singolo o tutti i dispositivi
-- ✅ **Controllo totale** - L'app madre gestisce modelli, migrazioni, campi aggiuntivi
+```python
+from fastapi import FastAPI, Depends
+from linkbay_auth import AuthCore, create_auth_router, get_current_active_user
+
+app = FastAPI()
+
+# Configurazione (nel tuo main.py)
+user_service = MyUserService()  # La tua implementazione
+auth_core = AuthCore(
+    user_service=user_service,
+    secret_key="your-secret-key-here"
+)
+
+app.include_router(create_auth_router(auth_core))
+
+@app.get("/protected")
+async def protected_route(user = Depends(get_current_active_user)):
+    return {"message": "Accesso consentito"}
+```
