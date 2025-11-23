@@ -39,7 +39,47 @@ class MyUserService(UserServiceProtocol):
     async def get_user_by_id(self, user_id: int):
         return await self.db.query(User).filter(User.id == user_id).first()
 
-    # ... implementa tutti i metodi del Protocol
+    async def create_user(self, email: str, hashed_password: str):
+        user = User(email=email, hashed_password=hashed_password)
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    async def update_user_password(self, email: str, hashed_password: str):
+        user = await self.get_user_by_email(email)
+        if user:
+            user.hashed_password = hashed_password
+            self.db.commit()
+            self.db.refresh(user)
+        return user
+
+    async def save_refresh_token(self, user_id: int, token: str, expires_at: datetime):
+        rt = RefreshToken(user_id=user_id, token=token, expires_at=expires_at, revoked=False)
+        self.db.add(rt)
+        self.db.commit()
+        return rt
+
+    async def get_refresh_token(self, token: str):
+        return self.db.query(RefreshToken).filter(
+            RefreshToken.token == token,
+            RefreshToken.revoked == False
+        ).first()
+
+    async def revoke_refresh_token(self, token: str) -> bool:
+        rt = self.db.query(RefreshToken).filter(RefreshToken.token == token).first()
+        if rt:
+            rt.revoked = True
+            self.db.commit()
+            return True
+        return False
+
+    async def revoke_all_user_tokens(self, user_id: int):
+        self.db.query(RefreshToken).filter(
+            RefreshToken.user_id == user_id,
+            RefreshToken.revoked == False
+        ).update({"revoked": True})
+        self.db.commit()
 ```
 
 ### 2. Configura nel tuo FastAPI
@@ -67,7 +107,10 @@ app.include_router(auth_router)
 ### 3. Proteggi gli endpoint
 
 ```python
-from linkbay_auth import get_current_active_user
+from linkbay_auth import create_get_current_active_user
+
+# Crea la dependency con il tuo auth_core
+get_current_active_user = create_get_current_active_user(auth_core, create_get_current_user(auth_core))
 
 @app.get("/protected")
 async def protected_route(current_user = Depends(get_current_active_user)):

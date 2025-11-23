@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import datetime
+from datetime import datetime, timedelta
 from .core import AuthCore
 from .schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     PasswordResetRequest, PasswordResetConfirm
 )
+from .dependencies import get_current_active_user
 
 def create_auth_router(auth_core: AuthCore) -> APIRouter:
     router = APIRouter(prefix="/auth", tags=["auth"])
@@ -29,7 +30,7 @@ def create_auth_router(auth_core: AuthCore) -> APIRouter:
         refresh_token = auth_core.create_refresh_token(user.id)
         
         # Salva refresh token
-        expires_at = datetime.utcnow() + auth_core.refresh_token_expire_days
+        expires_at = datetime.utcnow() + timedelta(days=auth_core.refresh_token_expire_days)
         await auth_core.user_service.save_refresh_token(user.id, refresh_token, expires_at)
         
         return Token(
@@ -49,7 +50,7 @@ def create_auth_router(auth_core: AuthCore) -> APIRouter:
         access_token = auth_core.create_access_token(data={"sub": str(user.id)})
         refresh_token = auth_core.create_refresh_token(user.id)
         
-        expires_at = datetime.utcnow() + auth_core.refresh_token_expire_days
+        expires_at = datetime.utcnow() + timedelta(days=auth_core.refresh_token_expire_days)
         await auth_core.user_service.save_refresh_token(user.id, refresh_token, expires_at)
         
         return Token(
