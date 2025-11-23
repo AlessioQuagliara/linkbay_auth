@@ -21,9 +21,17 @@ class AuthCore:
         self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        """Verifica password con truncation automatica per bcrypt"""
+        # Bcrypt ha limite di 72 bytes - truncate se necessario
+        if len(plain_password.encode('utf-8')) > 72:
+            plain_password = plain_password[:72]
         return self.pwd_context.verify(plain_password, hashed_password)
 
     def get_password_hash(self, password: str) -> str:
+        """Hash della password con truncation automatica per bcrypt"""
+        # Bcrypt ha limite di 72 bytes - truncate se necessario
+        if len(password.encode('utf-8')) > 72:
+            password = password[:72]
         return self.pwd_context.hash(password)
 
     def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None):

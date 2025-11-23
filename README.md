@@ -136,6 +136,13 @@ I tuoi modelli devono avere questi campi minimi:
 
 **RefreshToken**: `id`, `user_id`, `token`, `expires_at`, `revoked`
 
+## Note Tecniche
+
+- **Password Truncation**: Le password vengono automaticamente troncate a 72 byte (limite bcrypt)
+- **Async Support**: Tutti i metodi del `UserServiceProtocol` sono async
+- **Token Expiry**: Access token default 15 min, Refresh token default 30 giorni
+- **Sicurezza**: Hash bcrypt automatico, JWT firmati con HS256
+
 ## Licenza
 ```
 MIT - Vedere LICENSE per dettagli.
