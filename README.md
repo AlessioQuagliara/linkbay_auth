@@ -1,257 +1,205 @@
-# LinkBay-Auth v0.2.0
+# LinkBay-Auth v0.2.1
 
-[![License](https://img.shields.io/badge/license-MIT-blue)]() [![Python](https://img.shields.io/badge/python-3.8+-blue)]() [![Tests](https://img.shields.io/badge/tests-passing-green)]() [![Security](https://img.shields.io/badge/security-production--ready-brightgreen)]()
+[![License](https://img.shields.io/badge/license-MIT-blue)]() [![Python](https://img.shields.io/badge/python-3.8+-blue)]() [![Tests](https://img.shields.io/badge/tests-20/20-green)]()
 
-**Sistema di autenticazione JWT per FastAPI - Production-ready con sicurezza avanzata**
+LinkBay-Auth fornisce un set completo di endpoint JWT per FastAPI senza imporre alcun modello di database. È ideale per progetti interni, MVP e applicazioni con requisiti di sicurezza standard. Prima di usarla in scenari enterprise critici, pianifica audit esterni, MFA e monitoring dedicato.
 
- **Production-Ready** - Protezione brute force, token blacklist, security logging  
- **Password Policy** - Policy configurabili con validazione avanzata  
- **Device Tracking** - Gestione sessioni multi-dispositivo  
- **Security Audit** - Log completo eventi di sicurezza  
- **Bcrypt nativo** - Usa `bcrypt>=4.0.0` direttamente
+## Prima di iniziare
 
-## Caratteristiche
-
-###  Core
-- **JWT** con access token e refresh token
-- **Zero dipendenze DB** - Implementi tu i modelli
-- **Completamente async** - Perfetto per FastAPI
-- **Password hashing** con bcrypt nativo
-- **Token revocation** - Singolo o tutti i dispositivi
-- **Reset password** - Con token temporanei verificabili
-
-### Sicurezza Avanzata (v0.2.0)
-- **Protezione Brute Force** - Rate limiting configurabile
-- **Token Blacklist** - Logout immediato access token
-- **Password Policy** - Policy configurabili con validazione
-- **Email Validation** - Validazione avanzata con check DNS
-- **Security Logging** - Audit trail completo
-- **Device Tracking** - Gestione sessioni multi-dispositivo
-- **Pattern Detection** - Rilevamento password deboli
-
-## Documentazione
-
-- **[ Quick Start](QUICK_START.md)** - Setup in 5 minuti
-- **[ Release Notes v0.2.0](RELEASE_NOTES_v0.2.0.md)** - Riepilogo completo release
-- **[ Security Best Practices](SECURITY_BEST_PRACTICES.md)** - Guida produzione
-- **[ Changelog v0.2.0](CHANGELOG_v0.2.0.md)** - Dettagli feature
+- ✅ Pro: architettura pulita, async-first, nessun vincolo sui tuoi modelli.
+- ⚠️ Contro: niente MFA/SSO integrati, nessun audit indipendente.
+- 🎯 Usa questa libreria per ridurre il boilerplate di registrazione/login mantenendo pieno controllo sui dati.
 
 ## Installazione
 
 ```bash
 pip install linkbay-auth==0.2.0
 ```
-oppure
+
+Oppure l'ultima versione dal repository:
+
 ```bash
 pip install git+https://github.com/AlessioQuagliara/linkbay_auth.git
 ```
 
-## Utilizzo Rapido
+## Come funziona (3 passi)
 
-### 1. Implementa UserServiceProtocol
+### 1. Implementa il servizio utente
 
 ```python
-from linkbay_auth import UserServiceProtocol
 from datetime import datetime
+from linkbay_auth import UserServiceProtocol
 
 class MyUserService(UserServiceProtocol):
-    def __init__(self, db_session):
-        self.db = db_session
+    def __init__(self, db):
+        self.db = db
 
     async def get_user_by_email(self, email: str):
-        # Tua implementazione con i TUOI modelli
-        return await self.db.query(User).filter(User.email == email).first()
+        return await self.db.get_user_by_email(email)
 
     async def get_user_by_id(self, user_id: int):
-        return await self.db.query(User).filter(User.id == user_id).first()
+        return await self.db.get_user(user_id)
 
     async def create_user(self, email: str, hashed_password: str):
-        user = User(email=email, hashed_password=hashed_password)
-        self.db.add(user)
-        self.db.commit()
-        self.db.refresh(user)
-        return user
+        return await self.db.create_user(email=email, hashed_password=hashed_password)
 
     async def update_user_password(self, email: str, hashed_password: str):
-        user = await self.get_user_by_email(email)
-        if user:
-            user.hashed_password = hashed_password
-            self.db.commit()
-            self.db.refresh(user)
-        return user
+        return await self.db.update_password(email, hashed_password)
 
     async def save_refresh_token(self, user_id: int, token: str, expires_at: datetime):
-        rt = RefreshToken(user_id=user_id, token=token, expires_at=expires_at, revoked=False)
-        self.db.add(rt)
-        self.db.commit()
-        return rt
+        return await self.db.store_refresh_token(user_id, token, expires_at)
 
     async def get_refresh_token(self, token: str):
-        return self.db.query(RefreshToken).filter(
-            RefreshToken.token == token,
-            RefreshToken.revoked == False
-        ).first()
+        return await self.db.get_refresh_token(token)
 
     async def revoke_refresh_token(self, token: str) -> bool:
-        rt = self.db.query(RefreshToken).filter(RefreshToken.token == token).first()
-        if rt:
-            rt.revoked = True
-            self.db.commit()
-            return True
-        return False
+        return await self.db.revoke_refresh_token(token)
 
     async def revoke_all_user_tokens(self, user_id: int):
-        self.db.query(RefreshToken).filter(
-            RefreshToken.user_id == user_id,
-            RefreshToken.revoked == False
-        ).update({"revoked": True})
-        self.db.commit()
+        await self.db.revoke_all_tokens(user_id)
 ```
 
-### 2. Configura nel tuo FastAPI
+> ℹ️ Sostituisci i metodi `db.*` con il tuo ORM o servizio preferito.
 
-```python
-from fastapi import FastAPI
-from linkbay_auth import AuthCore, create_auth_router
-
-app = FastAPI()
-
-# Configurazione
-user_service = MyUserService(db_session)
-auth_core = AuthCore(
-    user_service=user_service,
-    secret_key="tuo-secret-key",
-    access_token_expire_minutes=15,
-    refresh_token_expire_days=30
-)
-
-# Aggiungi le route di autenticazione
-auth_router = create_auth_router(auth_core)
-app.include_router(auth_router)
-```
-
-### 3. Proteggi gli endpoint
-
-```python
-from linkbay_auth import create_get_current_active_user
-
-# Crea la dependency con il tuo auth_core
-get_current_active_user = create_get_current_active_user(auth_core, create_get_current_user(auth_core))
-
-@app.get("/protected")
-async def protected_route(current_user = Depends(get_current_active_user)):
-    return {"message": f"Ciao {current_user.email}"}
-```
-
-## Endpoints Disponibili
-
-- `POST /auth/register` - Registrazione
-- `POST /auth/login` - Login
-- `POST /auth/refresh` - Rinnova access token
-- `POST /auth/logout` - Logout
-- `POST /auth/logout-all` - Logout da tutti i dispositivi
-- `GET /auth/me` - Informazioni utente corrente
-- `POST /auth/password-reset-request` - Richiedi reset password
-- `POST /auth/password-reset-confirm` - Conferma reset password
-
-## Requisiti Modelli
-
-### Modelli Base (v0.1.0)
-**User**: `id`, `email`, `hashed_password`, `is_active`
-
-**RefreshToken**: `id`, `user_id`, `token`, `expires_at`, `revoked`
-
-### Modelli Avanzati (v0.2.0 - Opzionali)
-**RefreshToken** (con device tracking):
-- `user_agent`, `ip_address`, `device_name`
-
-**SecurityLog** (audit trail):
-- `id`, `event_type`, `user_id`, `email`, `ip_address`, `user_agent`, `details`, `timestamp`
-
-**LoginAttempt** (brute force protection):
-- `id`, `email`, `ip_address`, `success`, `timestamp`
-
-Vedi `example_production.py` per implementazione completa.
-
-## Note Tecniche
-
-### Core
-- **Bcrypt Nativo**: Usa direttamente `bcrypt>=4.0.0` (no passlib) per massima compatibilità
-- **Password Sicure**: Gestisce automaticamente password lunghe (bcrypt ha limite 72 byte)
-- **Async Support**: Tutti i metodi del `UserServiceProtocol` sono async
-- **Token Expiry**: Access token default 15 min, Refresh token default 30 giorni
-- **Sicurezza**: Hash bcrypt con salt automatico, JWT firmati con HS256
-- **Error Handling**: Gestione robusta degli errori di hashing/verifica
-
-### Sicurezza Avanzata (v0.2.0)
-- **Token Blacklist**: In-memory (dev) / Redis (production) per logout immediato
-- **Rate Limiting**: Configurabile, default 5 tentativi in 15 minuti
-- **Account Lockout**: Blocco temporaneo dopo tentativi falliti (default 30 min)
-- **Password Policy**: Min 8 caratteri, uppercase/lowercase/numbers configurabili
-- **Email Validation**: RFC 5322 compliant con check DNS opzionale
-- **Security Events**: 8 tipi di eventi tracciati automaticamente
-- **Device Tracking**: User agent, IP, device name nei refresh token
-- **Testato**: Test suite completa + esempio production-ready
-
-## Testing
-
-Esegui i test per verificare il funzionamento:
-
-```bash
-python3 test_basic.py
-```
-
-Tutti i test devono passare con ✅ (12/12 test)
-
-## File Utili
-
-- `test_basic.py` - Test suite completa (12 test)
-- `example_integration.py` - Esempio base con SQLAlchemy
-- `example_production.py` - **✨ Nuovo**: Implementazione production-ready con tutte le feature
-- `CHANGELOG.md` - Storia delle modifiche v0.1.0
-- `CHANGELOG_v0.2.0.md` - **✨ Nuovo**: Dettagli release v0.2.0
-- `security_utils.py` - **✨ Nuovo**: Utility di sicurezza avanzate
-- `README.md` - Questa documentazione
-
-## Troubleshooting
-
-### Errore bcrypt/passlib
-Se vedi errori come `AttributeError: module 'bcrypt' has no attribute '__about__'`:
-- ✅ **Risolto**: La libreria usa ora `bcrypt>=4.0.0` direttamente (no passlib)
-- Reinstalla: `pip install -e . --force-reinstall`
-
-### Password troppo lunghe
-- ✅ **Risolto**: Gestione automatica del limite 72 byte di bcrypt
-- Le password vengono gestite correttamente senza errori
-
-### Import Error email-validator
-Se vedi `ImportError: email-validator is not installed`:
-- ✅ **Risolto**: Dipendenza inclusa in `pydantic[email]`
-- Reinstalla: `pip install -e .`
-
-## Licenza
-```
-MIT - Vedere LICENSE per dettagli.
-```
-
-## INSTALLAZIONE
+### 2. Configura FastAPI
 
 ```python
 from fastapi import FastAPI, Depends
-from linkbay_auth import AuthCore, create_auth_router, get_current_active_user
-
-app = FastAPI()
-
-# Configurazione (nel tuo main.py)
-user_service = MyUserService()  # La tua implementazione
-auth_core = AuthCore(
-    user_service=user_service,
-    secret_key="your-secret-key-here"
+from linkbay_auth import (
+    AuthCore,
+    create_auth_router,
+    create_get_current_user,
+    create_get_current_active_user,
 )
 
-app.include_router(create_auth_router(auth_core))
+app = FastAPI()
+user_service = MyUserService(db_session)
 
-@app.get("/protected")
-async def protected_route(user = Depends(get_current_active_user)):
-    return {"message": "Accesso consentito"}
+auth_core = AuthCore(
+    user_service=user_service,
+    secret_key="cambia-questa-chiave",
+    access_token_expire_minutes=15,
+    refresh_token_expire_days=30,
+)
+
+auth_router = create_auth_router(auth_core)
+app.include_router(auth_router)
+
+get_current_user = create_get_current_user(auth_core)
+get_current_active_user = create_get_current_active_user(auth_core, get_current_user)
+
+@app.get("/me")
+async def whoami(current_user = Depends(get_current_active_user)):
+    return {"email": current_user.email}
 ```
+
+### 3. Avvia e testa
+
+```bash
+uvicorn main:app --reload
+```
+
+Endpoint inclusi:
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/refresh`
+- `POST /auth/logout`
+- `POST /auth/logout-all`
+- `GET /auth/me`
+- `POST /auth/password-reset-request`
+- `POST /auth/password-reset-confirm`
+
+## Esempio avanzato (opzionale)
+
+Abilita funzioni extra di sicurezza quando il tuo progetto richiede policy più rigide.
+
+```python
+from linkbay_auth import PasswordPolicy
+
+policy = PasswordPolicy(
+    min_length=10,
+    require_uppercase=True,
+    require_lowercase=True,
+    require_numbers=True,
+    require_special=True,
+    blacklist=["password", "123456", "qwerty"],
+)
+
+auth_core = AuthCore(
+    user_service=user_service,
+    secret_key=env.SECRET_KEY,
+    access_token_expire_minutes=10,
+    refresh_token_expire_days=15,
+    password_policy=policy,
+    enable_token_blacklist=True,
+)
+```
+
+Per sfruttare blacklist, rate limiting e logging estendi il servizio utente con:
+
+```python
+async def log_security_event(self, event_type: str, user_id: int | None, details: dict):
+    ...  # salva nel tuo sistema di logging
+
+async def check_login_attempts(self, email: str) -> bool:
+    ...  # True se l'utente può tentare ancora, False per bloccarlo
+
+async def record_failed_login(self, email: str):
+    ...  # incrementa il contatore di tentativi
+
+async def reset_failed_logins(self, email: str):
+    ...  # resetta il contatore dopo login riuscito
+```
+
+## Caratteristiche principali
+
+- JWT access e refresh token con scadenze configurabili.
+- Hashing password con `bcrypt>=4.0.0` (nessuna dipendenza da passlib).
+- Async-first e privo di opinioni sui tuoi modelli.
+- Reset password con token temporanei.
+- Possibilità di revocare singoli refresh token o interi set utente.
+
+## Sicurezza opzionale inclusa
+
+| Feature | Come abilitarla | Cosa devi implementare |
+| --- | --- | --- |
+| Password policy | `password_policy=PasswordPolicy(...)` | Nessun extra |
+| Token blacklist | `enable_token_blacklist=True` | Storage condiviso (es. Redis) |
+| Brute force guard | `check_login_attempts`, `record_failed_login`, `reset_failed_logins` | Persistenza contatori |
+| Security logging | `log_security_event` | Destinazione log centralizzata |
+| Device tracking | Salva user agent/IP nei tuoi modelli | Endpoint di gestione sessioni |
+
+## Testing
+
+```bash
+python3 test_basic.py              # flusso auth core
+python3 test_security_features.py  # feature opzionali di sicurezza
+```
+
+Entrambe le suite devono terminare con `✅ TUTTI I TEST SUPERATI`.
+
+## Limitazioni note
+
+- Mancano MFA, SSO/OAuth social, gestione dispositivi con UI.
+- Nessun audit di sicurezza esterno eseguito.
+- La blacklist di default è in-memory: per produzione usa Redis o altro store condiviso.
+- Non fornisce metriche/monitoring: integrazione Prometheus/Grafana a carico tuo.
+
+## Roadmap consigliata
+
+1. Security audit indipendente.
+2. Espandere la test suite (edge case, fuzzing, integrazione DB reali).
+3. Aggiungere MFA (TOTP/email) e device management.
+4. Documentare runbook operativi per incident response e backup/restore.
+
+## Licenza
+
+MIT. Puoi usarla e modificarla liberamente, assicurandoti di valutarne i rischi nel tuo contesto.
+
+## Supporto
+
+- Issues: https://github.com/AlessioQuagliara/linkbay_auth/issues
+- Email: quagliara.alessio@gmail.com
+
+Contribuisci, apri una issue o raccontaci come stai usando la libreria 🧡
